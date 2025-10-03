@@ -1,0 +1,15 @@
+name: bayesrvat
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.8
+  - pip
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - pyarrow
+  - pyyaml
+  - notebook
