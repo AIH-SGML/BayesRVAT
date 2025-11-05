@@ -30,4 +30,4 @@ The tutorial proceeds through the following steps:
 6. **Visualization**:  Violin plot of posterior weight distributions for `plof`, `missense`, and `other1` annotations.  
 
 ## Example with Provided Data
-To illustrate data formats and model behavior, the tutorial uses APOB as an example gene. Variants, annotations, and allele frequencies are simulated and shipped with the repository. 
+To illustrate data formats and model behavior, the tutorial uses simulated APOB genotypes, with empirical annotations and allele frequencies. 
