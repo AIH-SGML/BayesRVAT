@@ -1,6 +1,6 @@
 # BayesRVAT
 
-Code for the paper: "Bayesian Aggregation of Multiple Annotations Enhances Rare Variant Association Testing" presented at [RECOMB 2025](https://recomb.org/recomb2025/accepted_papers.html).
+Code for the paper: "Bayesian Aggregation of Multiple Annotations Enhances Rare Variant Association Testing" presented at [RECOMB 2025](https://recomb.org/recomb2025/accepted_papers.html) and now published in [Genome Research](https://genome.cshlp.org/content/35/12/2682).
 
 ## Installation
 If you want to run the showcase notebook and adapt the code please run:
