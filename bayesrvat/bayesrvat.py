@@ -371,10 +371,21 @@ class BayesRVAT():
         """
         verbose = False
         t0 = time.time()
-        self.brvat0.alpha = np.concatenate([self.alpha,np.asarray([self.beta])])
-        self.brvat0.sigma_n = self.sigma_n
-        _loglik0, _gradients0 = self.brvat0.null_lml(gradients=True)
-        
+        if self.trait_type == 'binary':
+            # Non-carriers have burden ~ expit(-6) ~ 0, so alt-loglik ~ null-loglik.
+            # Compute directly from F0[:, :-1] @ alpha (drop appended constant col,
+            # no beta term) to avoid the brvat0.alpha = [alpha | beta] hack which
+            # produces enormous gradient inflation under logistic likelihood.
+            _mean0 = self.F0[:, :-1].dot(self.alpha[:, None])
+            _loglik0 = (self.Y0 * (-np.logaddexp(0, -_mean0))
+                        + (1 - self.Y0) * (-np.logaddexp(0, _mean0))).sum(0).mean()
+            _d_alpha0 = (self.F0[:, :-1].T.dot(self.Y0 - ss.expit(_mean0))).mean(1)
+            _gradients0 = None
+        else:
+            self.brvat0.alpha = np.concatenate([self.alpha,np.asarray([self.beta])])
+            self.brvat0.sigma_n = self.sigma_n
+            _loglik0, _gradients0 = self.brvat0.null_lml(gradients=True)
+
         # sample burden from posterior
         _burden1, _all = self.get_burden(return_all=True, only_carriers=True)
         _raw_w = _all['raw_w']
@@ -460,14 +471,22 @@ class BayesRVAT():
             gradients1['post_std'] = d_quad_term_d_pstd - d_kld_d_pstd
 
             gradients = {}
-            for key in (_gradients0.keys()-set(['alpha'])):
-                gradients[key] = _gradients0[key] + gradients1[key]
-            for key in gradients1.keys() -(_gradients0.keys() | set(['beta'])):
-                gradients[key] = gradients1[key]
-            gradients['alpha']= _gradients0['alpha'][:-1] + gradients1['alpha']
-            gradients['beta']= _gradients0['alpha'][-1] + gradients1['beta']
+            if self.trait_type == 'binary':
+                # Non-carriers contribute only to alpha gradient; beta is
+                # carrier-only (burden ~ 0 for non-carriers).
+                gradients['alpha'] = _d_alpha0 + gradients1['alpha']
+                gradients['beta'] = gradients1['beta']
+                for key in gradients1.keys() - set(['alpha', 'beta']):
+                    gradients[key] = gradients1[key]
+            else:
+                for key in (_gradients0.keys()-set(['alpha'])):
+                    gradients[key] = _gradients0[key] + gradients1[key]
+                for key in gradients1.keys() -(_gradients0.keys() | set(['beta'])):
+                    gradients[key] = gradients1[key]
+                gradients['alpha']= _gradients0['alpha'][:-1] + gradients1['alpha']
+                gradients['beta']= _gradients0['alpha'][-1] + gradients1['beta']
             if verbose: print('post_std:', time.time() - t0)
-            return _elbo, gradients  
+            return _elbo, gradients
         
         return _elbo
 
@@ -494,30 +513,44 @@ class BayesRVAT():
         """
         # Ensure that K*S is divisible by the batch_size
         assert (K * S) % batch_size == 0, 'K*S should be divisible by batch_size'
-        
+
         n_batches = int(K * S / batch_size)
         log_weights_list = []
-        
+
+        if self.trait_type == 'binary':
+            # Non-carrier loglik is constant across MC samples (burden ~ 0 for
+            # non-carriers, no dependence on w); compute it once outside the loop.
+            _mean0 = self.F0[:, :-1].dot(self.alpha[:, None])
+            _loglik0 = (self.Y0 * (-np.logaddexp(0, -_mean0))
+                        + (1 - self.Y0) * (-np.logaddexp(0, _mean0))).sum()
+        else:
+            _loglik0 = None
+
         for _ in range(n_batches):
-            
+
             # Sample weights
             _eps = np.random.randn(self.X.shape[1], batch_size)
-            _burden, _all = self.get_burden(eps=_eps, return_all=True)
+            if self.trait_type == 'binary':
+                _burden1, _all = self.get_burden(eps=_eps, return_all=True, only_carriers=True)
+            else:
+                _burden, _all = self.get_burden(eps=_eps, return_all=True)
             _raw_w = _all['raw_w']
 
             # compute log lik
-            _mean = self.F.dot(self.alpha[:,None]) + _burden * self.beta
             if self.trait_type=='gaussian':
-                _loglik = normal_pdf(self.Y - _mean, self.sigma_n).sum(0).mean()
+                _mean = self.F.dot(self.alpha[:,None]) + _burden * self.beta
+                _loglik = normal_pdf(self.Y - _mean, self.sigma_n).sum(0)
             else:
-                log_p = -np.logaddexp(0, -_mean)
-                log_1mp = -np.logaddexp(0, _mean)
-                _loglik = (self.Y * log_p + (1 - self.Y) * log_1mp).sum(0).mean()
-            
+                _mean1 = self.F1.dot(self.alpha[:, None]) + _burden1 * self.beta
+                log_p = -np.logaddexp(0, -_mean1)
+                log_1mp = -np.logaddexp(0, _mean1)
+                _loglik1 = (self.Y1 * log_p + (1 - self.Y1) * log_1mp).sum(0)
+                _loglik = _loglik0 + _loglik1
+
             # Compute prior and posterior probabilities
             _log_prior = normal_pdf(_raw_w - self.prior_mean[:,None], self.prior_std[:,None]).sum(0)
             _log_post  = normal_pdf(_raw_w - self.post_mean[:,None], self.post_std[:,None]).sum(0)
-            
+
             # Calculate log-weights for this batch
             _log_weights = _loglik + _log_prior - _log_post
             log_weights_list.append(_log_weights)
