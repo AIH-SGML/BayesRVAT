@@ -26,5 +26,6 @@ author = {Nappi, Antonio and Shilova, Liubov and Karaletsos, Theofanis and Cai, 
 journal = {Genome Research},
 year = {2025},
 doi = {10.1101/gr.280689.125}
-```
 }
+```
+
